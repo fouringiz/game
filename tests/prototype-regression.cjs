@@ -6,6 +6,14 @@ const canvas = {getContext: () => ({}), style: {}, addEventListener() {}};
 const context = vm.createContext({document: {getElementById: () => canvas}, window: {devicePixelRatio: 1}, innerWidth: 960, innerHeight: 540, addEventListener() {}, requestAnimationFrame() {}, performance: {now: () => 0}, assert});
 vm.runInContext(html.match(/<script>([\s\S]*?)<\/script>/)[1], context);
 const cases = {
+  'Sprinter control lab makes the candidate counterplay measurable': `
+    startSprinterLab(false);
+    for (let i = 0; i < 6000 && S.phase === 'wave'; i++) update(1/60);
+    assert.equal(S.lab.kind, 'sprinter'); assert.equal(S.gate, 10); assert.equal(S.waveLeaked, 10);
+    startSprinterLab(true);
+    for (let i = 0; i < 6000 && S.phase === 'wave'; i++) update(1/60);
+    assert.equal(S.gate, GATE_MAX); assert.equal(S.waveLeaked, 0); assert.equal(S.win, true);
+  `,
   'leech hunts across the map and retargets after a sale without teleporting': `
     reset(); S.credits = 1000; build(SLOTS[15], 'generator'); build(SLOTS[13], 'generator');
     S.phase = 'wave'; S.wave = 5;

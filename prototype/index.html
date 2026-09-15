@@ -82,6 +82,7 @@ const RANK_KILLS = [0, 12, 35];
 const SELL_RATE = 0.6, SELL_TIME = 1.8;          // 60% refund, 1.8 s demolition
 const GATE_MAX = 20;
 const COORD_WAVES = [4, 8];                       // Coordinator appears on these waves
+const SPRINTER_DASH_MULT = 1.7;                   // campaign value; lab candidates override it locally
 const MUT = {
   keratin:  {name:'Keratinization', vs:'flat',
              memo:'MEMORANDUM (Marsh): New specimens present keratinized plating. Kinetic damage −30%. Cause: your kinetic fire dominance. — G.M.'},
@@ -96,7 +97,7 @@ function reset() {
   S = {credits:200, gate:GATE_MAX, wave:0, phase:'menu', buildTimer:0, enemies:[], towers:[], shots:[], shells:[], fx:[],
        spawnQueue:[], spawnTimer:0, speed:1, selected:null, report:'', kills:0, waveKills:0, waveLeaked:0, time:0, win:false,
        dmg:{flat:0, arc:0}, mutations:[], feast:0, stolen:0,
-       coordInWave:false, coordEscaped:false, toast:'', toastT:0};
+       coordInWave:false, coordEscaped:false, toast:'', toastT:0, lab:null};
 }
 reset();
 
@@ -159,7 +160,22 @@ function startWave() {
   S.waveKills = 0; S.waveLeaked = 0; S.selected = null;
   S.coordInWave = COORD_WAVES.includes(S.wave); S.coordEscaped = false;
 }
+function startSprinterLab(withTurret) {
+  reset();
+  S.lab = {kind:'sprinter', withTurret, dashMultiplier:2.6}; // candidate only — does not change campaign balance
+  build(SLOTS[2], 'cannon');
+  if (withTurret) build(SLOTS[11], 'turret');
+  S.credits = 0; S.phase = 'wave'; S.wave = 5; S.mutations = ['sprinter'];
+  for (let i = 0; i < 14; i++) {
+    const enemy = makeEnemy('forager', 5); enemy.muts = ['sprinter']; enemy.d = 140 + i*66;
+    Object.assign(enemy, posAt(enemy.d)); S.enemies.push(enemy);
+  }
+}
 function endWave() {
+  if (S.lab) {
+    S.report = S.gate === GATE_MAX ? 'LAB RESULT: Countermeasure held the lane.' : 'LAB RESULT: Artillery alone leaked ' + S.waveLeaked + '.';
+    S.phase = 'over'; S.win = S.gate === GATE_MAX; return;
+  }
   let memo = '';
   if (S.coordInWave) {                                          // evolution is Coordinator-driven
     if (S.coordEscaped && S.mutations.length < 2) {
@@ -353,7 +369,7 @@ function update(dt) {
     let sp = e.speed;
     if ((e.type === 'forager' || e.type === 'coordinator') && e.dir !== -1) for (const c of S.enemies)   // herd: tuck in behind a Carapacid (the Coordinator hides in its shadow)
       if (!c.dead && c.type === 'carapacid' && c.d > e.d && c.d - e.d < 70) sp = Math.min(sp, c.speed * 1.05);
-    if (e.dash > 0) { sp *= 1.7; e.dash -= dt; }                // Sprinter Reflex dash
+    if (e.dash > 0) { sp *= (S.lab?.dashMultiplier ?? SPRINTER_DASH_MULT); e.dash -= dt; } // Sprinter Reflex dash
     sp *= feastMul;
     if (e.type === 'coordinator') {                             // observer: watches to mid-lane, then withdraws the way it came
       if (e.dir !== -1 && e.d >= TOTAL * 0.42) { e.dir = -1; e.speed *= 1.15; toast('COORDINATOR IS WITHDRAWING. Kill it before it reports.'); }
@@ -559,7 +575,7 @@ function draw() {
   ctx.beginPath(); ctx.moveTo(px - 4, 8); ctx.lineTo(px, 12); ctx.lineTo(px + 4, 8); ctx.closePath();
   ctx.fillStyle = '#e8ecf2'; ctx.fill();
   text(pw.cons + ' / ' + pw.prod, bx + 48 + bw + 8, HUD/2, 12, pw.brown ? '#ff6b6b' : barColor, 'left', '600');
-  text('Wave ' + S.wave + '/' + WAVES, 560, HUD/2, 14, '#e8ecf2', 'center', '700');
+  text(S.lab ? 'LAB: Sprinter Reflex 2.6×' : 'Wave ' + S.wave + '/' + WAVES, 560, HUD/2, 14, S.lab ? '#ffb454' : '#e8ecf2', 'center', '700');
   if (S.phase === 'build') btn(640, 7, 130, 26, 'Send wave (' + Math.ceil(S.buildTimer) + ')', startWave, true, true);
   if (S.phase === 'build' || S.phase === 'wave') btn(786, 7, 60, 26, '×' + S.speed, () => { S.speed = S.speed === 1 ? 2 : 1; });
   text('Gate ' + S.gate, 930, HUD/2, 14, S.gate > 6 ? '#7cffb2' : '#ff6b6b', 'right', '700');
@@ -568,7 +584,8 @@ function draw() {
   let bottom = '';
   if (S.toastT > 0) bottom = S.toast;
   else if (S.phase === 'build') bottom = 'Next wave: ' + previewText(S.wave + 1) + (S.report ? '     |     ' + S.report : '');
-  else if (S.phase === 'wave') bottom = 'Wave ' + S.wave + ' in progress. Towers aim themselves. Tap one to pause, upgrade or sell it.';
+  else if (S.phase === 'wave') bottom = S.lab ? 'CONTROL LAB — 14 Foragers, candidate 2.6× dash. Compare cannon alone with the marked Turret counter.'
+                                                : 'Wave ' + S.wave + ' in progress. Towers aim themselves. Tap one to pause, upgrade or sell it.';
   text(bottom, 14, H - BOT/2, 13, S.toastT > 0 ? '#ffe66d' : '#c9d0dc', 'left');
 
   // selection menus
@@ -613,11 +630,14 @@ function draw() {
       'it rides mid-wave behind a Carapacid shield, turns at mid-lane and slips back out. Kill it before it reports, or the swarm mutates.',
       'Selling returns 60%; stripes burn; demolition takes ~2 s. Finish with the Gate untouched for ★★★.'];
     lines.forEach((l, i) => text(l, W/2, 180 + i*24, 14, '#c9d0dc', 'center'));
-    btn(W/2 - 70, 360, 140, 36, 'Begin', () => { S.phase = 'build'; S.buildTimer = 25; S.report = ''; }, true, true);
+    btn(W/2 - 70, 360, 140, 36, 'Begin campaign', () => { S.phase = 'build'; S.buildTimer = 25; S.report = ''; }, true, true);
+    text('Development control lab — candidate only; it does not alter campaign balance.', W/2, 412, 12, '#8a93a6', 'center');
+    btn(W/2 - 160, 430, 150, 34, 'Lab: Cannon only', () => startSprinterLab(false));
+    btn(W/2 + 10, 430, 150, 34, 'Lab: + Turret', () => startSprinterLab(true), true, true);
   }
   if (S.phase === 'over') {
     ctx.fillStyle = 'rgba(21,24,32,0.9)'; ctx.fillRect(0, 0, W, H);
-    text(S.win ? 'Node secured. Ring One holds.' : 'The Gate has fallen.', W/2, 175, 26, S.win ? '#7cffb2' : '#ff6b6b', 'center', '700');
+    text(S.lab ? (S.win ? 'Control held.' : 'Artillery countered.') : (S.win ? 'Node secured. Ring One holds.' : 'The Gate has fallen.'), W/2, 175, 26, S.win ? '#7cffb2' : '#ff6b6b', 'center', '700');
     if (S.win) {
       const n = S.gate >= GATE_MAX ? 3 : S.gate >= GATE_MAX * 0.7 ? 2 : 1;   // purity by Gate HP
       stars(n, W/2, 225, 30);
@@ -626,7 +646,7 @@ function draw() {
     }
     text('Waves ' + S.wave + '/' + WAVES + '   Kills ' + S.kills + '   Credits left ' + S.credits, W/2, S.win ? 292 : 245, 15, '#c9d0dc', 'center');
     text(S.win ? 'DISPATCH: Held. All of it. — H.' : 'DISPATCH: Gate lost. Composition noted. Next time. — H.', W/2, S.win ? 318 : 275, 14, '#8a93a6', 'center');
-    btn(W/2 - 70, S.win ? 350 : 320, 140, 36, 'Play again', () => { reset(); S.phase = 'build'; S.buildTimer = 25; }, true, true);
+    btn(W/2 - 70, S.win ? 350 : 320, 140, 36, S.lab ? 'Back to menu' : 'Play again', () => { const wasLab = S.lab; reset(); if (!wasLab) { S.phase = 'build'; S.buildTimer = 25; } }, true, true);
   }
 }
 
