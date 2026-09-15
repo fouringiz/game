@@ -103,6 +103,21 @@ const cases = {
     for (let i = 0; i < 14; i++) update(0.05);
     assert.equal(e.hp, 20); assert.equal(e.incoming, 0); assert.equal(pickTarget(t, st), e);
   `,
+  'an escaped Coordinator creates a mutation that requires a rebuild': `
+    function playWave(fourthWave) {
+      reset(); S.credits = 10000;
+      build(SLOTS[8], 'turret'); build(SLOTS[9], 'cannon'); S.credits = 0;
+      S.wave = 3; startWave();
+      for (let i = 0; i < 30000 && S.phase === 'wave'; i++) update(1/60);
+      assert.equal(S.coordEscaped, true); assert.deepEqual(S.mutations, ['sprinter']); assert.equal(S.gate, 15);
+      if (fourthWave) { S.credits = 10000; build(SLOTS[0], 'turret'); S.credits = 0; }
+      startWave();
+      for (let i = 0; i < 30000 && S.phase === 'wave'; i++) update(1/60);
+      return {gate:S.gate, leaked:S.waveLeaked};
+    }
+    const unchanged = playWave(false); assert.deepEqual(unchanged, {gate:10, leaked:1});
+    const rebuilt = playWave(true); assert.deepEqual(rebuilt, {gate:15, leaked:0});
+  `,
 };
 let failed = 0;
 for (const [name, source] of Object.entries(cases)) {
