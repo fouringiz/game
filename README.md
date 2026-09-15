@@ -1,6 +1,6 @@
-# Ultimate Tower Defense — паспорт v2.4
+# Ultimate Tower Defense — паспорт v2.6
 
-Это импортированный исторический снимок документа, а не сборка игры. Снимок взят из files.zip:ultimate-td-passport-v2-4.md. Дата коммита — дата импорта, не дата разработки.
+Это импортированный исторический снимок документа, а не сборка игры. Снимок взят из ultimate-td-passport-v2-6.md. Дата коммита — дата импорта, не дата разработки.
 
 - [Паспорт](docs/passport.md)
 - [Актуальный проект](https://github.com/fouringiz/game/tree/main)
