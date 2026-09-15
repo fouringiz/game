@@ -1,5 +1,7 @@
 // Search the actual prototype simulation for an affordable wave-4 defense that
 // holds the swarm while allowing the Coordinator to return to the entrance.
+// The broad 0.25-second scan is only a shortlist heuristic; conclusions come
+// solely from the 1/60-second replays in `verified`.
 const fs = require('node:fs');
 const vm = require('node:vm');
 const path = require('node:path');
