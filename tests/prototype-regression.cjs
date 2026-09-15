@@ -6,6 +6,16 @@ const canvas = {getContext: () => ({}), style: {}, addEventListener() {}};
 const context = vm.createContext({document: {getElementById: () => canvas}, window: {devicePixelRatio: 1}, innerWidth: 960, innerHeight: 540, addEventListener() {}, requestAnimationFrame() {}, performance: {now: () => 0}, assert});
 vm.runInContext(html.match(/<script>([\s\S]*?)<\/script>/)[1], context);
 const cases = {
+  'Sprinter Reflex uses the approved 1.7× campaign multiplier': `
+    assert.equal(SPRINTER_DASH_MULT, 1.7);
+    reset(); build(SLOTS[0], 'cannon'); const t = S.towers[0];
+    S.mutations = ['sprinter'];
+    const e = makeEnemy('forager', 5); e.d = 300; Object.assign(e, posAt(300));
+    S.enemies = [e]; S.phase = 'wave'; S.wave = 5;
+    fireArc(t, tstats(t), e); t.paused = true;
+    assert.ok(e.dash > 0); update(0.01);
+    assert.ok(Math.abs(e.effSpeed - e.T.speed * SPRINTER_DASH_MULT) < 1e-6);
+  `,
   'leech hunts across the map and retargets after a sale without teleporting': `
     reset(); S.credits = 1000; build(SLOTS[15], 'generator'); build(SLOTS[13], 'generator');
     S.phase = 'wave'; S.wave = 5;

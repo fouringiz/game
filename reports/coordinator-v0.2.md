@@ -32,3 +32,10 @@ creates a mutation, and changing the build restores the previous outcome.
 The scenario is not yet a balanced campaign verdict. It begins wave 4 with a
 sparse defense and a damaged Gate, so it should be treated as a control case
 for the mechanic rather than a recommended player build.
+
+## Verdict (2026-09-16, approved)
+
+Campaign `SPRINTER_DASH_MULT = 1.7` stays; the `2.6×` candidate is rejected.
+The study shows the campaign value already forces a measurable rebuild. The
+in-prototype lab is removed; this report and the regression suite remain the
+evidence.
