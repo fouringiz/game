@@ -81,6 +81,7 @@ const BASE_POWER = 40, PAUSED_DRAW = 0.25, WARMUP = 2.5, BROWNOUT_MULT = 0.6, WA
 const RANK_KILLS = [0, 12, 35];
 const SELL_RATE = 0.6, SELL_TIME = 1.8;          // 60% refund, 1.8 s demolition
 const GATE_MAX = 20;
+const SIM_STEP = 1 / 60;                         // combat advances in identical ticks at every display refresh rate
 const COORD_WAVES = [4, 8];                       // Coordinator appears on these waves
 const SPRINTER_DASH_MULT = 1.7;                   // approved campaign value
 const MUT = {
@@ -97,7 +98,7 @@ function reset() {
   S = {credits:200, gate:GATE_MAX, wave:0, phase:'menu', buildTimer:0, enemies:[], towers:[], shots:[], shells:[], fx:[],
        spawnQueue:[], spawnTimer:0, speed:1, selected:null, report:'', kills:0, waveKills:0, waveLeaked:0, time:0, win:false,
        dmg:{flat:0, arc:0}, mutations:[], feast:0, stolen:0,
-       coordInWave:false, coordEscaped:false, toast:'', toastT:0};
+       coordInWave:false, coordEscaped:false, toast:'', toastT:0, accumulator:0};
 }
 reset();
 
@@ -180,7 +181,7 @@ function endWave() {
   S.phase = 'build'; S.buildTimer = 20;
 }
 function build(slot, type) {
-  const T = TOWER[type]; if (S.credits < T.cost) return;
+  const T = TOWER[type]; if (slot.tower || S.credits < T.cost) return;
   S.credits -= T.cost;
   const t = {type, T, x:slot.x, y:slot.y, level:1, paused:false, warm:0, cd:0, kills:0, angle:-Math.PI/2, slot,
              invested:T.cost, selling:false, sellT:0, leeched:null};
@@ -299,6 +300,12 @@ function fireArc(t, st, target) {
 
 // ---------------------------------------------------------------- update
 function update(dt) {
+  S.accumulator += dt;
+  const ticks = Math.floor((S.accumulator + 1e-9) / SIM_STEP);
+  S.accumulator = Math.max(0, S.accumulator - ticks * SIM_STEP);
+  for (let i = 0; i < ticks; i++) stepSimulation(SIM_STEP);
+}
+function stepSimulation(dt) {
   S.time += dt;
   if (S.toastT > 0) S.toastT -= dt;
   for (const s of S.shots) s.life -= dt; S.shots = S.shots.filter(s => s.life > 0);
@@ -646,7 +653,8 @@ canvas.addEventListener('pointerdown', ev => {
 // ---------------------------------------------------------------- loop
 let last = performance.now();
 function frame(now) {
-  const raw = Math.min(0.05, (now - last) / 1000); last = now;
+  // Bound catch-up after a suspended tab; speed changes the tick count, never the tick size.
+  const raw = Math.max(0, Math.min(0.25, (now - last) / 1000)); last = now;
   update(raw * S.speed);
   draw();
   requestAnimationFrame(frame);

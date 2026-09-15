@@ -35,6 +35,7 @@ function evaluateShot(dashMultiplier, type) {
 }
 
 function controlWave(dashMultiplier, turretSlot = null) {
+  if (turretSlot === 2) throw new Error('Slot 2 already contains the Cannon.');
   const c = load(dashMultiplier);
   return vm.runInContext(`
     reset(); build(SLOTS[2], 'cannon');
@@ -58,7 +59,8 @@ const impacts = multipliers.flatMap(multiplier => ['forager', 'carapacid', 'coor
 const controls = multipliers.map(multiplier => ({
   multiplier,
   cannonOnly: controlWave(multiplier),
-  turretSlots: Array.from({length: 16}, (_, slot) => ({slot, ...controlWave(multiplier, slot)})),
+  turretSlots: Array.from({length: 16}, (_, slot) => slot).filter(slot => slot !== 2)
+    .map(slot => ({slot, ...controlWave(multiplier, slot)})),
 }));
 const results = {multipliers, impacts, controls};
 fs.mkdirSync(path.join(__dirname, '../reports/generated'), {recursive: true});

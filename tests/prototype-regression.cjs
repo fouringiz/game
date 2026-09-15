@@ -13,7 +13,7 @@ const cases = {
     const e = makeEnemy('forager', 5); e.d = 300; Object.assign(e, posAt(300));
     S.enemies = [e]; S.phase = 'wave'; S.wave = 5;
     fireArc(t, tstats(t), e); t.paused = true;
-    assert.ok(e.dash > 0); update(0.01);
+    assert.ok(e.dash > 0); update(SIM_STEP);
     assert.ok(Math.abs(e.effSpeed - e.T.speed * SPRINTER_DASH_MULT) < 1e-6);
   `,
   'leech hunts across the map and retargets after a sale without teleporting': `
@@ -72,8 +72,8 @@ const cases = {
     reset(); build(SLOTS[0], 'generator'); S.phase = 'wave'; S.wave = 1;
     const g = S.towers[0], e = makeEnemy('leech', 1);
     e.d = 140; Object.assign(e, posAt(e.d)); S.enemies.push(e);
-    update(0.01); assert.equal(e.state, 'seek'); assert.equal(power().prod, 80);
-    e.x = g.x; e.y = g.y; update(0.01);
+    update(SIM_STEP); assert.equal(e.state, 'seek'); assert.equal(power().prod, 80);
+    e.x = g.x; e.y = g.y; update(SIM_STEP);
     assert.equal(e.state, 'attached'); assert.equal(power().prod, 40);
     damage(e, 10000, null); assert.equal(power().prod, 80);
   `,
@@ -105,25 +105,71 @@ const cases = {
     for (let i = 0; i < 14; i++) update(0.05);
     assert.equal(e.hp, 20); assert.equal(e.incoming, 0); assert.equal(pickTarget(t, st), e);
   `,
-  'an escaped Coordinator mutation makes a rebuild improve the next wave': `
-    function playWave(keepMutation, addCounter) {
-      reset(); S.credits = 10000;
-      build(SLOTS[8], 'turret'); build(SLOTS[9], 'cannon'); S.credits = 0;
+  'a Coordinator mutation causes a leak that either a purchase or an upgrade can prevent': `
+    function playWave(keepMutation, counter) {
+      reset();
+      build(SLOTS[8], 'turret'); build(SLOTS[9], 'cannon');
       S.wave = 3; startWave();
       for (let i = 0; i < 30000 && S.phase === 'wave'; i++) update(1/60);
+      assert.equal(S.phase, 'build', 'wave 4 must finish without losing the Gate');
       assert.equal(S.coordEscaped, true); assert.ok(S.mutations.includes('sprinter'));
       if (!keepMutation) S.mutations = [];
-      if (addCounter) { S.credits = 10000; build(SLOTS[0], 'turret'); S.credits = 0; }
+      if (counter === 'turret') { build(SLOTS[0], 'turret'); assert.ok(SLOTS[0].tower); }
+      if (counter === 'upgrade') { upgrade(SLOTS[9].tower); assert.equal(SLOTS[9].tower.level, 2); }
       startWave();
       for (let i = 0; i < 30000 && S.phase === 'wave'; i++) update(1/60);
+      assert.equal(S.phase, 'build', 'wave 5 must finish without losing the Gate');
       return {gate:S.gate, leaked:S.waveLeaked};
     }
-    const unmutated = playWave(false, false);
-    const unchanged = playWave(true, false);
-    const rebuilt = playWave(true, true);
+    const unmutated = playWave(false);
+    const unchanged = playWave(true);
+    const rebuilt = playWave(true, 'turret');
+    const upgraded = playWave(true, 'upgrade');
     assert.ok(unchanged.leaked > unmutated.leaked, 'the mutation should worsen wave 5');
     assert.ok(rebuilt.leaked < unchanged.leaked, 'the countermeasure should reduce leaks');
     assert.ok(rebuilt.gate > unchanged.gate, 'the countermeasure should preserve more Gate HP');
+    assert.ok(upgraded.leaked < unchanged.leaked, 'an ordinary upgrade also prevents leaks');
+    assert.ok(upgraded.gate > unchanged.gate, 'an ordinary upgrade also preserves Gate HP');
+  `,
+  'an occupied or demolishing slot cannot host a second tower': `
+    reset(); build(SLOTS[2], 'cannon');
+    const original = SLOTS[2].tower, credits = S.credits;
+    build(SLOTS[2], 'turret');
+    assert.equal(S.towers.length, 1); assert.equal(SLOTS[2].tower, original); assert.equal(S.credits, credits);
+    sell(original); build(SLOTS[2], 'turret');
+    assert.equal(S.towers.length, 1); assert.equal(S.credits, credits);
+    update(SELL_TIME + SIM_STEP); build(SLOTS[2], 'turret');
+    assert.equal(S.towers.length, 1); assert.equal(SLOTS[2].tower.type, 'turret');
+  `,
+  'fractional frame time is accumulated and reset with a new game': `
+    reset(); update(SIM_STEP / 2); assert.equal(S.time, 0);
+    update(SIM_STEP / 2); assert.equal(S.time, SIM_STEP);
+    update(SIM_STEP / 2); reset(); update(SIM_STEP / 2);
+    assert.equal(S.time, 0); update(SIM_STEP / 2); assert.equal(S.time, SIM_STEP);
+  `,
+  'real frame updates give identical combat at different refresh rates and game speeds': `
+    const render = draw; draw = () => {};
+    function runFrames(frameDurations, speed) {
+      reset(); build(SLOTS[8], 'turret'); build(SLOTS[9], 'cannon');
+      S.wave = 3; startWave(); S.speed = speed; last = 0;
+      let wallTime = 0, i = 0;
+      const duration = 120 / speed;
+      while (wallTime < duration - 1e-9) {
+        wallTime = Math.min(duration, wallTime + frameDurations[i++ % frameDurations.length]);
+        frame(wallTime * 1000);
+      }
+      return {gate:S.gate, wave:S.wave, phase:S.phase, kills:S.kills, credits:S.credits,
+        time:S.time, mutations:[...S.mutations], report:S.report,
+        enemies:S.enemies.map(e=>({type:e.type,hp:e.hp,d:e.d,x:e.x,y:e.y,dash:e.dash})),
+        towers:S.towers.map(t=>({type:t.type,kills:t.kills,cd:t.cd})),
+        shells:S.shells.map(sh=>({t:sh.t,tx:sh.tx,ty:sh.ty})), queue:S.spawnQueue.length};
+    }
+    try {
+      const reference = runFrames([1/60], 1);
+      for (const speed of [1,2]) for (const durations of [[1/20],[1/30],[1/60],[1/90],[1/120],[1/144],[1/120,1/30,0.08]]) {
+        assert.deepEqual(runFrames(durations, speed), reference, 'refresh pattern ' + durations + ', speed ' + speed);
+      }
+    } finally { draw = render; }
   `,
 };
 let failed = 0;
@@ -132,3 +178,4 @@ for (const [name, source] of Object.entries(cases)) {
   catch (error) { failed++; console.error('FAIL', name, error.message); }
 }
 process.exitCode = failed ? 1 : 0;
+console.log(Object.keys(cases).length + ' scenarios, ' + failed + ' failures');

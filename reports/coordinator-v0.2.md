@@ -1,41 +1,65 @@
 # Coordinator control study — v0.2
 
 Date: 2026-09-16  
-Status: prototype evidence; values remain draft.
+Status: rerun after the fixed-step simulation fix; balance values remain draft.
 
 ## Question
 
-Can a Coordinator escape, cause a visible mutation, and make a defensive
-rebuild meaningful in the current implementation?
+Does an escaped Coordinator cause measurable damage on the next wave, and
+which affordable responses prevent that damage?
 
-## Verified scenario
+## Method
 
-The experiment runs the actual browser simulation at `1/60` seconds per step.
+Run `node tools/check-coordinator.cjs`. Results are written to
+`reports/generated/coordinator-results.json`.
 
-1. Place a **Turret** in slot 8 and a **Cannon** in slot 9.
-2. Run wave 4. The Coordinator exits through the entrance; one enemy leaks and
-   the Gate falls from 20 to 15. Because artillery did more damage, it grants
-   **Sprinter Reflex** for wave 5.
-3. With the same defense, wave 5 leaks one more enemy and the Gate falls to 10.
-4. Build one **Turret** in slot 0 before wave 5. The mutated wave then leaks
-   none and the Gate remains at 15.
+The tool reproduces one known layout, using the actual prototype with fixed
+1/60-second simulation ticks. It compares five cases at 30, 60 and 120 frames
+per second and game speeds ×1 and ×2: 30 trials with identical results for each
+case. It replaces the earlier coarse layout search; there is no 0.25-second
+simulation step or candidate rejection heuristic in this tool now.
 
-For comparison, removing the mutation from the same setup also produces no
-wave-5 leak. The mutation is therefore the cause of the extra leak, and the
-added Turret is a measurable countermeasure.
+Start with 200 credits and a healthy Gate. Build a **Turret** in slot 8 and a
+**Cannon** in slot 9 (slot indices are zero-based). Begin wave 4 directly;
+waves 1–3 are outside this control. The build costs 170 credits, leaving 30.
+After wave 4 the Gate has 15 HP, the Coordinator has escaped, Sprinter Reflex
+has been granted, and 250 credits are available. All later purchases use that
+balance; the experiment grants no extra money.
 
-## Result
+## Results
 
-The Coordinator loop is playable in a narrow, controlled scenario: escaping
-creates a mutation, and changing the build restores the previous outcome.
+Every case starts wave 5 with 15 Gate HP. All upgrades and additions remain
+within the base 40 power supply. Costs below are current draft balance values.
 
-The scenario is not yet a balanced campaign verdict. It begins wave 4 with a
-sparse defense and a damaged Gate, so it should be treated as a control case
-for the mechanic rather than a recommended player build.
+| Wave-5 condition | Purchase cost | Leaks | Gate HP after wave 5 |
+| --- | ---: | ---: | ---: |
+| Mutation removed for comparison; no purchase | 0 | 0 | 15 |
+| Sprinter Reflex 1.7×; no purchase | 0 | 1 | 10 |
+| Sprinter Reflex; add a Turret in slot 0 | 60 | 0 | 15 |
+| Sprinter Reflex; upgrade existing Cannon to level 2 | 80 | 0 | 15 |
+| Sprinter Reflex; upgrade existing Turret to level 2 | 50 | 0 | 15 |
 
-## Verdict (2026-09-16, approved)
+The mutation causes an extra leak in this scenario. Both an additional tower
+and an ordinary upgrade prevent it. In particular, upgrading the existing
+Turret costs less than the tested addition and achieves the same result.
 
-Campaign `SPRINTER_DASH_MULT = 1.7` stays; the `2.6×` candidate is rejected.
-The study shows the campaign value already forces a measurable rebuild. The
-in-prototype lab is removed; this report and the regression suite remain the
-evidence.
+## Limits and next step
+
+This proves the mutation has a measurable effect and that reinforcing the
+existing defense can compensate. It does **not** prove a need to change weapon
+composition. The control skips waves 1–3; it is not a full campaign playthrough.
+The [full mission study](adaptation-v0.2.md) still finds clean wins for both
+single-weapon strategies, including with forced mutations.
+
+Next, compare composition changes with ordinary upgrades at comparable cost
+and power, then verify useful cases in the full mission. The regression suite
+also compares real frame updates at 20–144 fps, uneven frame intervals and
+both speed settings, so this evidence no longer depends on a 60 fps display.
+
+## Verdict (2026-09-16, clarified after audit)
+
+The approved campaign `SPRINTER_DASH_MULT = 1.7` remains; the `2.6×` candidate
+remains rejected. The earlier statement that this study forces a rebuild was
+too strong: ordinary upgrades work as well. The in-prototype lab remains
+removed. The fixed-multiplier test, control study and broader regression suite
+preserve the decision and the limits of its evidence.

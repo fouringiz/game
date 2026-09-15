@@ -1,4 +1,5 @@
 // Deterministic, headless experiments against the actual prototype simulation.
+// dt is the elapsed time delivered per call; update always uses SIM_STEP ticks.
 const fs = require('node:fs');
 const vm = require('node:vm');
 const path = require('node:path');

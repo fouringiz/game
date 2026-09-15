@@ -1,106 +1,61 @@
-// Search the actual prototype simulation for an affordable wave-4 defense that
-// holds the swarm while allowing the Coordinator to return to the entrance.
-// The broad 0.25-second scan is only a shortlist heuristic; conclusions come
-// solely from the 1/60-second replays in `verified`.
+// Reproduce the documented wave-4/5 control case using campaign prices and income.
+// Compare reinforcements with ordinary upgrades; this is not a layout search.
 const fs = require('node:fs');
 const vm = require('node:vm');
 const path = require('node:path');
+const assert = require('node:assert/strict');
 
-const html = fs.readFileSync(path.join(__dirname, '../prototype/index.html'), 'utf8');
-const source = html.match(/<script>([\s\S]*?)<\/script>/)[1];
+const source = fs.readFileSync(path.join(__dirname, '../prototype/index.html'), 'utf8').match(/<script>([\s\S]*?)<\/script>/)[1];
 const canvas = {getContext: () => ({}), style: {}, addEventListener() {}};
 const context = vm.createContext({
   document: {getElementById: () => canvas}, window: {devicePixelRatio: 1},
-  innerWidth: 960, innerHeight: 540, addEventListener() {}, requestAnimationFrame() {}, performance: {now: () => 0},
+  innerWidth: 960, innerHeight: 540, addEventListener() {}, requestAnimationFrame() {}, performance: {now: () => 0}, assert,
 });
 vm.runInContext(source, context);
-
-const scenario = `
-function coordinatorTrial(layout, counter, clearMutation, dt) {
-  dt = dt || 0.25;
-  reset(); S.credits = 10000;
-  for (const item of layout) build(SLOTS[item.slot], item.type);
-  S.credits = 0; S.wave = 3; startWave();
-  let steps = 0;
-  while (S.phase === 'wave' && steps++ < 30000) update(dt);
-  const afterFour = {gate:S.gate, leaked:S.waveLeaked, escaped:S.coordEscaped, mutations:[...S.mutations], report:S.report};
-  if (clearMutation) S.mutations = [];
-  S.credits = 10000;
-  for (const item of counter || []) build(SLOTS[item.slot], item.type);
-  S.credits = 0;
-  startWave(); steps = 0;
-  while (S.phase === 'wave' && steps++ < 30000) update(dt);
-  return {layout, counter:counter||[], afterFour, afterFive:{gate:S.gate, leaked:S.waveLeaked, mutations:[...S.mutations], report:S.report}, towers:S.towers.map(t=>({type:t.type,slot:SLOTS.indexOf(t.slot)}))};
-}
-function waveFour(layout) {
-  reset(); S.credits = 10000;
-  for (const item of layout) build(SLOTS[item.slot], item.type);
-  S.credits = 0; S.wave = 3; startWave();
-  let steps = 0;
-  while (S.phase === 'wave' && steps++ < 4000) update(0.25);
-  return {layout, gate:S.gate, leaked:S.waveLeaked, escaped:S.coordEscaped, mutations:[...S.mutations], report:S.report};
-}
-`;
-vm.runInContext(scenario, context);
-const run = (layout, counter, clearMutation=false, dt=0.25) => vm.runInContext(`coordinatorTrial(${JSON.stringify(layout)},${JSON.stringify(counter)},${clearMutation},${dt})`, context);
-const waveFour = layout => vm.runInContext(`waveFour(${JSON.stringify(layout)})`, context);
-
-const candidates = [];
-// Affordable starting loadouts. Generators are unnecessary below 40 draw.
-for (let a = 0; a < 16; a++) for (const ta of ['turret', 'cannon']) {
-  for (let b = a + 1; b < 16; b++) for (const tb of ['turret', 'cannon']) {
-    const layout = [{slot:a,type:ta},{slot:b,type:tb}];
-    const cost = layout.reduce((n,x)=>n+(x.type==='turret'?60:110),0);
-    if (cost > 200) continue;
-    const r = run(layout);
-    if (r.afterFour.escaped && r.afterFour.gate > 0) candidates.push({layout, gate:r.afterFour.gate, leaked:r.afterFour.leaked});
+vm.runInContext(`
+function coordinatorControl(action, frameSeconds, speed) {
+  reset(); build(SLOTS[8], 'turret'); build(SLOTS[9], 'cannon');
+  const startingCredits = S.credits;
+  S.wave = 3;
+  function playWave() {
+    startWave();
+    let frames = 0;
+    while (S.phase === 'wave' && frames++ < 60000) update(frameSeconds * speed);
+    assert.equal(S.phase, 'build', 'wave must finish with the Gate alive');
+    return {gate:S.gate, leaked:S.waveLeaked, kills:S.waveKills,
+      escaped:S.coordEscaped, mutations:[...S.mutations], credits:S.credits};
   }
+  const afterFour = playWave();
+  assert.ok(afterFour.escaped); assert.deepEqual(afterFour.mutations, ['sprinter']);
+  if (action === 'unmutated') S.mutations = [];
+  if (action === 'add-turret') { build(SLOTS[0], 'turret'); assert.ok(SLOTS[0].tower); }
+  if (action === 'upgrade-cannon') { upgrade(SLOTS[9].tower); assert.equal(SLOTS[9].tower.level, 2); }
+  if (action === 'upgrade-turret') { upgrade(SLOTS[8].tower); assert.equal(SLOTS[8].tower.level, 2); }
+  const purchaseCost = afterFour.credits - S.credits, energy = power();
+  assert.ok(!energy.brown);
+  const afterFive = playWave();
+  return {startingCredits, afterFour, purchaseCost, energy, afterFive};
 }
-// Also test one-tower starts and a third affordable Turret.
-for (let a = 0; a < 16; a++) for (const type of ['turret','cannon']) {
-  const r = run([{slot:a,type}]);
-  if (r.afterFour.escaped && r.afterFour.gate > 0) candidates.push({layout:[{slot:a,type}], gate:r.afterFour.gate, leaked:r.afterFour.leaked});
-}
-for (let a = 0; a < 16; a++) for (let b = a + 1; b < 16; b++) for (let c = b + 1; c < 16; c++) {
-  const r = run([{slot:a,type:'turret'},{slot:b,type:'turret'},{slot:c,type:'turret'}]);
-  if (r.afterFour.escaped && r.afterFour.gate > 0) candidates.push({layout:[{slot:a,type:'turret'},{slot:b,type:'turret'},{slot:c,type:'turret'}], gate:r.afterFour.gate, leaked:r.afterFour.leaked});
-}
+`, context);
 
-// By wave four a player can have reinvested bounties, so scan denser layouts
-// too. Search wave four only, then replay promising ones through wave five.
-for (let a = 0; a < 16; a++) for (let b = a + 1; b < 16; b++) for (let c = b + 1; c < 16; c++) for (let d = c + 1; d < 16; d++) {
-  const layout = [a,b,c,d].map(slot => ({slot,type:'turret'}));
-  const r = waveFour(layout);
-  if (r.escaped && r.gate > 0) candidates.push(r);
+const actions = ['unmutated', 'unchanged', 'add-turret', 'upgrade-cannon', 'upgrade-turret'];
+const results = [];
+for (const fps of [30, 60, 120]) for (const speed of [1, 2]) for (const action of actions) {
+  const control = vm.runInContext(`coordinatorControl(${JSON.stringify(action)}, ${1 / fps}, ${speed})`, context);
+  results.push({fps, speed, action, control});
 }
-for (let cannon = 0; cannon < 16; cannon++) for (let a = 0; a < 16; a++) for (let b = a + 1; b < 16; b++) {
-  if (cannon === a || cannon === b) continue;
-  const layout = [{slot:cannon,type:'cannon'},{slot:a,type:'turret'},{slot:b,type:'turret'}];
-  const r = waveFour(layout);
-  if (r.escaped && r.gate > 0) candidates.push(r);
+const baseline = results.filter(row => row.fps === 60 && row.speed === 1);
+for (const row of results) assert.deepEqual(row.control, baseline.find(b => b.action === row.action).control,
+  `different outcome at ${row.fps} fps, speed ${row.speed}, ${row.action}`);
+const unmutated = baseline.find(row => row.action === 'unmutated').control.afterFive;
+const unchanged = baseline.find(row => row.action === 'unchanged').control.afterFive;
+assert.ok(unchanged.leaked > unmutated.leaked, 'mutation must have a measurable effect');
+for (const action of actions.slice(2)) {
+  const reinforced = baseline.find(row => row.action === action).control.afterFive;
+  assert.ok(reinforced.leaked < unchanged.leaked && reinforced.gate > unchanged.gate, action);
 }
-
-const shortlist = candidates.sort((a,b) => b.gate - a.gate || a.leaked - b.leaked).slice(0, 30);
-const samples = shortlist.map(base => {
-  const noCounter = run(base.layout);
-  const withoutMutation = run(base.layout, [], true);
-  const used = new Set(base.layout.map(x => x.slot));
-  const counters = [];
-  for (let slot = 0; slot < 16; slot++) if (!used.has(slot)) {
-    const result = run(base.layout, [{slot,type:'turret'}]);
-    counters.push(result);
-  }
-  counters.sort((a,b) => b.afterFive.gate - a.afterFive.gate || a.afterFive.leaked - b.afterFive.leaked);
-  return {layout:base.layout, afterFour:noCounter.afterFour, withoutMutation:withoutMutation.afterFive, withoutCounter:noCounter.afterFive, bestTurretCounter:counters[0].afterFive,
-          counterSlot:counters[0].counter[0].slot};
-});
-const verified = samples.map(sample => ({
-  layout: sample.layout,
-  counterSlot: sample.counterSlot,
-  afterFour: run(sample.layout, [], false, 1/60).afterFour,
-  withoutMutation: run(sample.layout, [], true, 1/60).afterFive,
-  withoutCounter: run(sample.layout, [], false, 1/60).afterFive,
-  withTurretCounter: run(sample.layout, [{slot:sample.counterSlot,type:'turret'}], false, 1/60).afterFive,
-})).sort((a,b) => (b.withoutMutation.gate-b.withoutCounter.gate) - (a.withoutMutation.gate-a.withoutCounter.gate));
-const output = {found:candidates.length, samples, verified};
-console.log(JSON.stringify(output, null, 2));
+const output = {simulationStep:vm.runInContext('SIM_STEP', context), results};
+fs.mkdirSync(path.join(__dirname, '../reports/generated'), {recursive: true});
+fs.writeFileSync(path.join(__dirname, '../reports/generated/coordinator-results.json'), JSON.stringify(output, null, 2) + '\n');
+for (const row of baseline) console.log(JSON.stringify({action:row.action, ...row.control}));
+console.log(`PASS: ${results.length} controls agree across refresh rates and speeds.`);
