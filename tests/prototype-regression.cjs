@@ -1,7 +1,7 @@
 const fs = require('node:fs');
 const vm = require('node:vm');
 const assert = require('node:assert/strict');
-const html = fs.readFileSync(require('node:path').join(__dirname, '../ultimate-td-prototype-v0-2.html'), 'utf8');
+const html = fs.readFileSync(require('node:path').join(__dirname, '../prototype/index.html'), 'utf8');
 const canvas = {getContext: () => ({}), style: {}, addEventListener() {}};
 const context = vm.createContext({document: {getElementById: () => canvas}, window: {devicePixelRatio: 1}, innerWidth: 960, innerHeight: 540, addEventListener() {}, requestAnimationFrame() {}, performance: {now: () => 0}, assert});
 vm.runInContext(html.match(/<script>([\s\S]*?)<\/script>/)[1], context);
